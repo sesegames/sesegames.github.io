@@ -1,0 +1,79 @@
+name: Publish Posts
+
+on:
+  schedule:
+    - cron: '10 * * * *'  # 每小时运行一次
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Ruby
+      uses: ruby/setup-ruby@v1
+      with:
+        ruby-version: '3.2'
+        bundler-cache: true
+
+    - name: Install dependencies
+      run: |
+        gem install octokit
+        bundle install
+
+    - name: Check installed gems
+      run: |
+        gem list
+        bundle list
+
+    - name: Move and commit posts
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      run: |
+        ruby <<EOF
+        require 'fileutils'
+        require 'octokit'
+
+        begin
+          client = Octokit::Client.new(access_token: ENV['GITHUB_TOKEN'])
+          repo = ENV['GITHUB_REPOSITORY']
+
+          drafts_dir = 'posts_tmp'
+          posts_dir = '_posts'
+
+          puts "检查目录是否存在..."
+          puts "drafts_dir 存在: #{Dir.exist?(drafts_dir)}"
+          puts "posts_dir 存在: #{Dir.exist?(posts_dir)}"
+
+          drafts = Dir.glob(File.join(drafts_dir, '*.md')).sort
+          puts "找到 #{drafts.length} 篇待发布文章"
+
+          drafts[0...10].each do |draft|
+            new_filename = Time.now.strftime('%Y-%m-%d-') + File.basename(draft)
+            puts "移动文件: #{draft} 到 #{File.join(posts_dir, new_filename)}"
+            FileUtils.mv(draft, File.join(posts_dir, new_filename))
+            
+            puts "提交更改: #{new_filename}"
+            system("git config user.name github-actions")
+            system("git config user.email github-actions@github.com")
+            system("git add #{posts_dir}/#{new_filename}")
+            system("git commit -m 'Publish post: #{new_filename}'")
+          end
+
+          puts "推送更改"
+          system("git push")
+        rescue => e
+          puts "发生错误: #{e.message}"
+          puts e.backtrace.join("\n")
+          exit 1
+        end
+        EOF
+
+    - name: Trigger GitHub Pages rebuild
+      run: |
+        curl -X POST \
+        -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+        -H "Accept: application/vnd.github.v3+json" \
+        https://api.github.com/repos/${{ github.repository }}/pages/builds
