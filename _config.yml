@@ -12,7 +12,7 @@ author: sesegames
 footerText: 'Copyright © 2024 sesegames黄油库'
 
 # 这些不要动
-permalink: /:year-:month-:day/:slug.html
+permalink: /:year-:month-:day/:title.html
 kramdown:
   auto_ids: true
   input: GFM
